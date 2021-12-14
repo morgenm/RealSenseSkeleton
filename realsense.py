@@ -7,6 +7,9 @@ import pyrealsense2 as rs
 import math
 import numpy as np
 import argparse
+import pickle
+import os
+import zipfile
 from skeletontracker import skeletontracker
 
 
@@ -88,7 +91,10 @@ def render_ids_3d(
                         thickness,
                     )
 
-def Record():
+
+def Record(saveDir, imageDir):
+    pickleFileLoc = os.path.join(saveDir, "save.skel")
+    pickleFile = open(pickleFileLoc, "wb")
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -115,8 +121,9 @@ def Record():
 
         # Create window for initialisation
         window_name = "cubemos skeleton tracking with realsense D400 series"
-        #cv2.namedWindow(window_name, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)
+        # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)
 
+        imageCounter = 0
         while True:
             # Create a pipeline object. This object configures the streaming camera and owns it's handle
             unaligned_frames = pipeline.wait_for_frames()
@@ -133,9 +140,19 @@ def Record():
             # perform inference and update the tracking id
             skeletons = skeletrack.track_skeletons(color_image)
 
+            # Save skeletons
+            pickle.dump(skeletons, pickleFile)
+
+            # Create image
+            color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
+
+            # Save image
+            cv2.imwrite(os.path.join(
+                imageDir, "image{}.png".format(imageCounter)), color_image)
+            imageCounter += 1
+
             # render the skeletons on top of the acquired image and display it
-            '''color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
-            cm.render_result(skeletons, color_image, joint_confidence)
+            '''cm.render_result(skeletons, color_image, joint_confidence)
 
             render_ids_3d(
                 color_image, skeletons, depth, depth_intrinsic, joint_confidence
@@ -150,23 +167,58 @@ def Record():
     except Exception as ex:
         print('Exception occured: "{}"'.format(ex))
 
-# Main content begins
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="RealSense Skeleton Tracking.")
-    parser.add_argument("mode", type=str, help="Program mode (record, playback)")
-    
-    args = parser.parse_args()
-    
+
+def MainProgram(args):
     # Check mode
     mode = args.mode
     if mode == "record" or mode == "r":
         print("Recording...")
-        Record()
-        
+
+        if args.file != None:  # Save file passed
+            # Create save dir name from args.file
+            saveDir = args.file + ".sav"
+
+            if not os.path.exists(saveDir):  # File/dir does not yet exist
+                os.mkdir(saveDir)  # Create directory for saving
+                # Create image directory
+                os.mkdir(os.path.join(saveDir, "image/"))
+
+                try:
+                    Record(saveDir, os.path.join(saveDir, "image/"))
+                except KeyboardInterrupt:
+                    print("Saving...")
+                    # Add .zip to name
+                    zfName = args.file + ".zip"
+
+                    # Compress save dir. Relpath is used to begin zipping inside the save dir structure.
+                    zf = zipfile.ZipFile(zfName, "w")
+                    topDir = os.path.join(saveDir, "..")
+                    for dirname, subdirs, files in os.walk(saveDir):
+                        if dirname != saveDir:
+                            zf.write(dirname, os.path.relpath(dirname, saveDir))
+                        for file in files:
+                            zf.write(os.path.join(dirname, file), os.path.join(os.path.relpath(dirname, saveDir), os.path.basename(file)))
+                    zf.close()
+            else:
+                print("[!] Passed file/directory already exists!")
+        else:
+            print("[!] No save file passed!")
+
     elif mode == "playback" or mode == "p":
         print("Playback")
-        
+
     else:
         print("[!] Unknown mode: {}! Available modes: record, playback.".format(mode))
-    
-    
+
+# Main content begins
+if __name__ == "__main__":
+    parser=argparse.ArgumentParser(description="RealSense Skeleton Tracking.")
+    parser.add_argument(
+        "mode", type=str, help="Program mode (record, playback)")
+    parser.add_argument("-f", "--file", type=str,
+                        help="File to save or load (depends on current mode).")
+
+    args=parser.parse_args()
+
+    MainProgram(args)  # Run main program
+    print("Quiting...")
