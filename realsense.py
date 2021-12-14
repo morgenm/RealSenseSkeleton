@@ -6,6 +6,7 @@ import time
 import pyrealsense2 as rs
 import math
 import numpy as np
+import argparse
 from skeletontracker import skeletontracker
 
 
@@ -87,9 +88,7 @@ def render_ids_3d(
                         thickness,
                     )
 
-
-# Main content begins
-if __name__ == "__main__":
+def Record():
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -98,6 +97,7 @@ if __name__ == "__main__":
 
         # Start the realsense pipeline
         pipeline = rs.pipeline()
+
         pipeline.start()
 
         # Create align object to align depth frames to color frames
@@ -132,11 +132,11 @@ if __name__ == "__main__":
 
             # perform inference and update the tracking id
             skeletons = skeletrack.track_skeletons(color_image)
-            print(skeletons)
 
             # render the skeletons on top of the acquired image and display it
             '''color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
             cm.render_result(skeletons, color_image, joint_confidence)
+
             render_ids_3d(
                 color_image, skeletons, depth, depth_intrinsic, joint_confidence
             )
@@ -149,3 +149,24 @@ if __name__ == "__main__":
 
     except Exception as ex:
         print('Exception occured: "{}"'.format(ex))
+
+# Main content begins
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="RealSense Skeleton Tracking.")
+    parser.add_argument("mode", type=str, help="Program mode (record, playback)")
+    
+    args = parser.parse_args()
+    
+    # Check mode
+    mode = args.mode
+    if mode == "record" or mode == "r":
+        print("Recording...")
+        Record()
+        
+    elif mode == "playback" or mode == "p":
+        print("Playback")
+        
+    else:
+        print("[!] Unknown mode: {}! Available modes: record, playback.".format(mode))
+    
+    
