@@ -8,7 +8,8 @@ import math
 import numpy as np
 import argparse
 import pickle
-import os, shutil
+import os
+import shutil
 import zipfile
 from skeletontracker import skeletontracker
 
@@ -168,6 +169,28 @@ def Record(saveDir, imageDir):
         print('Exception occured: "{}"'.format(ex))
 
 
+def IsDirEmpty(dir):
+    if not os.path.isdir(dir):
+        return True
+    
+    return len(os.listdir(dir)) == 0
+
+
+def GetValidNewDirFromFilename(fullPath):
+    basename = os.path.basename(fullPath)
+    if basename[-4:] == ".zip":  # Check if it has the zip file extension
+        basename = basename[:-4]
+    else:
+        basename = basename + "_extract"
+        
+    # String digits to the end. Not very clean though.
+    sub = 0
+    while os.path.isdir(os.path.join(os.path.dirname(fullPath), basename)):
+        basename += "{}".format(sub)
+        sub += 1
+    return basename
+
+
 def MainProgram(args):
     # Check mode
     mode = args.mode
@@ -195,11 +218,13 @@ def MainProgram(args):
                     topDir = os.path.join(saveDir, "..")
                     for dirname, subdirs, files in os.walk(saveDir):
                         if dirname != saveDir:
-                            zf.write(dirname, os.path.relpath(dirname, saveDir))
+                            zf.write(dirname, os.path.relpath(
+                                dirname, saveDir))
                         for file in files:
-                            zf.write(os.path.join(dirname, file), os.path.join(os.path.relpath(dirname, saveDir), os.path.basename(file)))
+                            zf.write(os.path.join(dirname, file), os.path.join(
+                                os.path.relpath(dirname, saveDir), os.path.basename(file)))
                     zf.close()
-                    
+
                 # Delete save dir
                 shutil.rmtree(saveDir, ignore_errors=True)
             else:
@@ -209,6 +234,26 @@ def MainProgram(args):
 
     elif mode == "playback" or mode == "p":
         print("Playback")
+        if args.file != None:  # File to load is passed
+            if os.path.isfile(args.file):
+                # Assign workDir as needed. If not specified, name based on loaded zip file.
+                workDir = args.workdir
+                if workDir == None:
+                    basename = GetValidNewDirFromFilename(args.file)
+                    workDir = os.path.join(
+                        os.path.dirname(args.file), basename)
+                else:
+                    if not IsDirEmpty(workDir):  # Create a subdirectory
+                       workDir = os.path.join(workDir, GetValidNewDirFromFilename(args.file))
+
+                # Extract zip file
+                with zipfile.ZipFile(args.file, "r") as zf:
+                    zf.extractall(workDir)
+
+            else:
+                print("[!] Given playback file does not exist!")
+        else:
+            print("[!] No file passed to load for playback!")
 
     else:
         print("[!] Unknown mode: {}! Available modes: record, playback.".format(mode))
@@ -220,6 +265,8 @@ if __name__ == "__main__":
         "mode", type=str, help="Program mode (record, playback)")
     parser.add_argument("-f", "--file", type=str,
                         help="File to save or load (depends on current mode).")
+    parser.add_argument("-w", "--workdir", type=str,
+                        help="Working directory to extract playback files to. By default creates a directory where the playback is stored.")
 
     args=parser.parse_args()
 
