@@ -160,8 +160,8 @@ def Record(saveDir, imageDir):
             # perform inference and update the tracking id
             skeletons = skeletrack.track_skeletons(color_image)
 
-            # Save skeletons
-            pickle.dump(skeletons, pickleFile)
+            # Save skeletons along with frame counter
+            pickle.dump((imageCounter, skeletons), pickleFile)
 
             # Create image
             color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
@@ -169,11 +169,10 @@ def Record(saveDir, imageDir):
             # Save image
             cv2.imwrite(os.path.join(
                 imageDir, "image{}.png".format(imageCounter)), color_image)
-            imageCounter += 1
             
-            # Dump depth and depth intrinsic
-            pickle.dump(DepthFramePickleable(depth, color_image), depthPickle)
-            pickle.dump(IntrinsicsPickleable(depth_intrinsic), depthIntrPickle)
+            # Dump depth and depth intrinsic with frame counter
+            pickle.dump((imageCounter, DepthFramePickleable(depth, color_image)), depthPickle)
+            pickle.dump((imageCounter, IntrinsicsPickleable(depth_intrinsic)), depthIntrPickle)
 
             # render the skeletons on top of the acquired image and display it
             '''cm.render_result(skeletons, color_image, joint_confidence)
@@ -184,6 +183,8 @@ def Record(saveDir, imageDir):
             cv2.imshow(window_name, color_image)
             if cv2.waitKey(1) == 27:
                 break'''
+            
+            imageCounter += 1
 
         pipeline.stop()
         # cv2.destroyAllWindows()
