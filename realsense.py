@@ -8,7 +8,7 @@ import math
 import numpy as np
 import argparse
 import pickle
-import os
+import os, shutil
 import zipfile
 from skeletontracker import skeletontracker
 
@@ -199,6 +199,9 @@ def MainProgram(args):
                         for file in files:
                             zf.write(os.path.join(dirname, file), os.path.join(os.path.relpath(dirname, saveDir), os.path.basename(file)))
                     zf.close()
+                    
+                # Delete save dir
+                shutil.rmtree(saveDir, ignore_errors=True)
             else:
                 print("[!] Passed file/directory already exists!")
         else:
