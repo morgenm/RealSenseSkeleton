@@ -10,9 +10,9 @@ import argparse
 import pickle
 import os
 import shutil
-import zipfile
+import zipfile, json
 from skeletontracker import skeletontracker
-
+from depth_data import *
 
 def render_ids_3d(
     render_image, skeletons_2d, depth_map, depth_intrinsic, joint_confidence
@@ -94,8 +94,17 @@ def render_ids_3d(
 
 
 def Record(saveDir, imageDir):
+    # Create save files
     pickleFileLoc = os.path.join(saveDir, "save.skel")
     pickleFile = open(pickleFileLoc, "wb")
+    #jcFileLoc = os.path.join(saveDir, "joint_confidence.sav")
+    #jcPickle = open(jcFileLoc, "wb")
+    depthFileLoc = os.path.join(saveDir, "depth.sav")
+    depthPickle = open(depthFileLoc, "wb")
+    depthIntrFileLoc = os.path.join(saveDir, "depth_intrinsic.sav")
+    depthIntrPickle = open(depthIntrFileLoc, "wb")
+    settingsFileLoc = os.path.join(saveDir, "settings.json")
+    
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -123,6 +132,13 @@ def Record(saveDir, imageDir):
         # Create window for initialisation
         window_name = "cubemos skeleton tracking with realsense D400 series"
         # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)
+        
+        # Write joint confidence and depth intrinsic
+        settings = {"joint_confidence" : joint_confidence}
+        with open(settingsFileLoc, 'w') as jf:
+            json.dump(settings, jf)
+        #with open(depthIntrFileLoc, 'w') as df:
+            #pickle.dump(depth_intrinsic, df)
 
         imageCounter = 0
         while True:
@@ -130,6 +146,9 @@ def Record(saveDir, imageDir):
             unaligned_frames = pipeline.wait_for_frames()
             frames = align.process(unaligned_frames)
             depth = frames.get_depth_frame()
+            
+            #depth = DepthFramePickleable(frames.get_depth_frame())
+            #depth.__getstate__ = DepthFrameGetState
             color = frames.get_color_frame()
             if not depth or not color:
                 continue
@@ -151,6 +170,10 @@ def Record(saveDir, imageDir):
             cv2.imwrite(os.path.join(
                 imageDir, "image{}.png".format(imageCounter)), color_image)
             imageCounter += 1
+            
+            # Dump depth and depth intrinsic
+            pickle.dump(DepthFramePickleable(depth, color_image), depthPickle)
+            pickle.dump(IntrinsicsPickleable(depth_intrinsic), depthIntrPickle)
 
             # render the skeletons on top of the acquired image and display it
             '''cm.render_result(skeletons, color_image, joint_confidence)
@@ -167,7 +190,9 @@ def Record(saveDir, imageDir):
 
     except Exception as ex:
         print('Exception occured: "{}"'.format(ex))
-
+        pickleFile.close()
+        depthPickle.close()
+        depthIntrPickle.close()
 
 def IsDirEmpty(dir):
     if not os.path.isdir(dir):
