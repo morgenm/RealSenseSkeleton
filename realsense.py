@@ -11,12 +11,13 @@ import shutil
 import json
 import tarfile
 import re
+import time, datetime
 from skeletontracker import skeletontracker
 from depth_data import *
 import render
 import settings
 
-def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settingsFileLoc):  
+def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settingsFile, out_frame_data):  
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -47,12 +48,10 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
         
         # Write joint confidence and depth intrinsic
         settings = {"joint_confidence" : joint_confidence}
-        with open(settingsFileLoc, 'w') as jf:
-            json.dump(settings, jf)
-        #with open(depthIntrFileLoc, 'w') as df:
-            #pickle.dump(depth_intrinsic, df)
+        json.dump(settings, settingsFile)
 
         imageCounter = 0
+        last_time = datetime.datetime.now()
         while True:
             # Create a pipeline object. This object configures the streaming camera and owns it's handle
             unaligned_frames = pipeline.wait_for_frames()
@@ -97,6 +96,13 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             if cv2.waitKey(1) == 27:
                 break'''
             
+            # Get delta time in seconds
+            now = datetime.datetime.now()
+            delta = now - last_time
+            delta = delta.total_seconds()
+            last_time = now
+            out_frame_data[imageCounter] = {"Delta Time" : delta}
+            
             imageCounter += 1
 
         pipeline.stop()
@@ -117,7 +123,7 @@ def IsDirEmpty(dir):
 
 def GetValidNewDirFromFilename(fullPath):
     basename = os.path.basename(fullPath)
-    if basename[-4:] == ".zip":  # Check if it has the zip file extension
+    if basename[-len(settings.data_file_extension):] == settings.data_file_extension:  # Check if it has the data file extension
         basename = basename[:-4]
     else:
         basename = basename + "_extract"
@@ -153,16 +159,24 @@ def MainProgram(args):
                 depthIntrFileLoc = os.path.join(saveDir, "depth_intrinsic.sav")
                 depthIntrPickle = open(depthIntrFileLoc, "wb")
                 settingsFileLoc = os.path.join(saveDir, "settings.json")
+                settingsFile = open(settingsFileLoc, "w")
+                frameDataLoc = os.path.join(saveDir, "frame_data.json")
+                frame_data = {} # Frame data is returned by record and must be written here
                 
                 try: 
-                    Record(saveDir, os.path.join(saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFileLoc)
+                    Record(saveDir, os.path.join(saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFile, frame_data)
                 except KeyboardInterrupt:
                     print("Saving...")
+                    
+                    # Write the frame data to file
+                    with open(frameDataLoc, 'w') as fd:
+                        json.dump(frame_data, fd)
                     
                     # Close the files
                     pickleFile.close()
                     depthPickle.close()
                     depthIntrPickle.close()
+                    settingsFile.close()
                     
                     # Compress the directory                    
                     tar = tarfile.open(args.file + settings.data_file_extension, "w:gz", compresslevel=settings.data_compress_level)
@@ -204,6 +218,11 @@ def MainProgram(args):
                     data = json.load(jf)
                     if "joint_confidence" in data:
                         joint_confidence = data["joint_confidence"]
+                    
+                # Read frame_data
+                frame_data = {}
+                with open(os.path.join(workDir, "frame_data.json"), "r") as fd:
+                    frame_data = json.load(fd)
                 
                 # Sorting image based on number
                 def atoi(text):
@@ -212,15 +231,17 @@ def MainProgram(args):
                 def human_key(text):
                     return [atoi(c) for c in re.split(r'(\d+)', text)]
                 
-                cv2.namedWindow(settings.window_name_playback, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO) # Create Window
-                
                 # Load images and depth data
                 imageDir = os.path.join(workDir, "image/")
                 sortedImages = os.listdir(imageDir)
                 sortedImages.sort(key=human_key)
+                color_images = {}
+                skeletons_frames = {}
+                depth_frames = {}
+                depth_intrinsic_frames = {}
                 for imageLoc in sortedImages:
                     imageCounter = human_key(imageLoc)[1]
-                    color_image = cv2.imread(os.path.join(imageDir, imageLoc))
+                    color_images[imageCounter] = cv2.imread(os.path.join(imageDir, imageLoc))
                     
                     skeletons = None
                     with open(os.path.join(workDir, "save.skel"), 'rb') as skels:
@@ -238,6 +259,8 @@ def MainProgram(args):
                     
                     if skeletons == None:
                         print("No skeleton found for frame: {}".format(imageCounter))
+                    else:
+                        skeletons_frames[imageCounter] = skeletons
                                 
                     depth = None
                     with open(os.path.join(workDir, "depth.sav"), 'rb') as depthFile:
@@ -255,6 +278,8 @@ def MainProgram(args):
                                 
                     if depth == None:
                         print("No depth found for frame: {}".format(imageCounter))
+                    else:
+                        depth_frames[imageCounter] = depth
                                 
                     depth_intrinsic = None
                     with open(os.path.join(workDir, "depth_intrinsic.sav"), 'rb') as df:
@@ -272,18 +297,50 @@ def MainProgram(args):
                                 
                     if depth_intrinsic == None:
                         print("No depth intrinsic found for frame: {}".format(imageCounter))
+                    else:
+                        depth_intrinsic_frames[imageCounter] = depth_intrinsic
+                        
                     
-                    # render the skeletons on top of the acquired image and display it
-                    cm.render_result(skeletons, color_image, joint_confidence)
-        
-                    render.render_ids_3d(
-                        color_image, skeletons, depth, depth_intrinsic, joint_confidence
-                    )
-                    cv2.imshow(settings.window_name_playback, color_image)
-                    if cv2.waitKey(1) == 27:
-                        break
-                
+                # Render each frame
+                print("Playing...")
+                cv2.namedWindow(settings.window_name_playback, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO) # Create Window
+                last_time = datetime.datetime.now() # Last render time
+                for frame_number in color_images:
+                    if frame_number in color_images and frame_number in skeletons_frames and frame_number in depth_frames and frame_number in depth_intrinsic_frames:
+                        color_image = color_images[frame_number]
+                        skeletons = skeletons_frames[frame_number]
+                        depth = depth_frames[frame_number]
+                        depth_intrinsic = depth_intrinsic_frames[frame_number]
+                    
+                        # render the skeletons on top of the acquired image and display it
+                        cm.render_result(skeletons, color_image, joint_confidence)
+            
+                        render.render_ids_3d(
+                            color_image, skeletons, depth, depth_intrinsic, joint_confidence
+                        )
+                        cv2.imshow(settings.window_name_playback, color_image)
+                        
+                        if cv2.waitKey(1) == 27:
+                            break
+                    
+                    # Get delta time and wait if necessary
+                    frame_str = "{}".format(frame_number)
+                    if frame_str in frame_data:
+                        now = datetime.datetime.now()
+                        delta = now - last_time
+                        delta = delta.total_seconds()
+                        last_time = now
+                        
+                        record_delta = frame_data[frame_str]["Delta Time"]
+                        if record_delta > delta:
+                            time.sleep(record_delta - delta)
+                    else:
+                        print("No frame data found for frame: {}".format(frame_number))
+            
                 cv2.destroyAllWindows()
+                
+                # Delete save dir
+                shutil.rmtree(workDir, ignore_errors=True)
             else:
                 print("[!] Given playback file does not exist!")
         else:
