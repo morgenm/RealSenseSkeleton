@@ -2,7 +2,6 @@
 from collections import namedtuple
 import util as cm
 import cv2
-import time
 import pyrealsense2 as rs
 import math
 import numpy as np
@@ -10,9 +9,12 @@ import argparse
 import pickle
 import os
 import shutil
-import zipfile, json
+import json
+import tarfile
+import re
 from skeletontracker import skeletontracker
 from depth_data import *
+import settings
 
 def render_ids_3d(
     render_image, skeletons_2d, depth_map, depth_intrinsic, joint_confidence
@@ -93,18 +95,7 @@ def render_ids_3d(
                     )
 
 
-def Record(saveDir, imageDir):
-    # Create save files
-    pickleFileLoc = os.path.join(saveDir, "save.skel")
-    pickleFile = open(pickleFileLoc, "wb")
-    #jcFileLoc = os.path.join(saveDir, "joint_confidence.sav")
-    #jcPickle = open(jcFileLoc, "wb")
-    depthFileLoc = os.path.join(saveDir, "depth.sav")
-    depthPickle = open(depthFileLoc, "wb")
-    depthIntrFileLoc = os.path.join(saveDir, "depth_intrinsic.sav")
-    depthIntrPickle = open(depthIntrFileLoc, "wb")
-    settingsFileLoc = os.path.join(saveDir, "settings.json")
-    
+def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settingsFileLoc):  
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -130,7 +121,7 @@ def Record(saveDir, imageDir):
         joint_confidence = 0.2
 
         # Create window for initialisation
-        window_name = "cubemos skeleton tracking with realsense D400 series"
+        window_name = "cuot workingbemos skeleton tracking with realsense D400 series"
         # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)
         
         # Write joint confidence and depth intrinsic
@@ -171,8 +162,9 @@ def Record(saveDir, imageDir):
                 imageDir, "image{}.png".format(imageCounter)), color_image)
             
             # Dump depth and depth intrinsic with frame counter
+            pIntrinsics = IntrinsicsPickleable(depth_intrinsic)
+            pickle.dump((imageCounter, pIntrinsics), depthIntrPickle)
             pickle.dump((imageCounter, DepthFramePickleable(depth, color_image)), depthPickle)
-            pickle.dump((imageCounter, IntrinsicsPickleable(depth_intrinsic)), depthIntrPickle)
 
             # render the skeletons on top of the acquired image and display it
             '''cm.render_result(skeletons, color_image, joint_confidence)
@@ -232,24 +224,29 @@ def MainProgram(args):
                 # Create image directory
                 os.mkdir(os.path.join(saveDir, "image/"))
 
-                try:
-                    Record(saveDir, os.path.join(saveDir, "image/"))
+                # Create save files
+                pickleFileLoc = os.path.join(saveDir, "save.skel")
+                pickleFile = open(pickleFileLoc, "wb")
+                depthFileLoc = os.path.join(saveDir, "depth.sav")
+                depthPickle = open(depthFileLoc, "wb")
+                depthIntrFileLoc = os.path.join(saveDir, "depth_intrinsic.sav")
+                depthIntrPickle = open(depthIntrFileLoc, "wb")
+                settingsFileLoc = os.path.join(saveDir, "settings.json")
+                
+                try: 
+                    Record(saveDir, os.path.join(saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFileLoc)
                 except KeyboardInterrupt:
                     print("Saving...")
-                    # Add .zip to name
-                    zfName = args.file + ".zip"
-
-                    # Compress save dir. Relpath is used to begin zipping inside the save dir structure.
-                    zf = zipfile.ZipFile(zfName, "w")
-                    topDir = os.path.join(saveDir, "..")
-                    for dirname, subdirs, files in os.walk(saveDir):
-                        if dirname != saveDir:
-                            zf.write(dirname, os.path.relpath(
-                                dirname, saveDir))
-                        for file in files:
-                            zf.write(os.path.join(dirname, file), os.path.join(
-                                os.path.relpath(dirname, saveDir), os.path.basename(file)))
-                    zf.close()
+                    
+                    # Close the files
+                    pickleFile.close()
+                    depthPickle.close()
+                    depthIntrPickle.close()
+                    
+                    # Compress the directory                    
+                    tar = tarfile.open(args.file + settings.data_file_extension, "w:gz", compresslevel=settings.data_compress_level)
+                    tar.add(saveDir, arcname="")
+                    tar.close()
 
                 # Delete save dir
                 shutil.rmtree(saveDir, ignore_errors=True)
@@ -261,7 +258,11 @@ def MainProgram(args):
     elif mode == "playback" or mode == "p":
         print("Playback")
         if args.file != None:  # File to load is passed
-            if os.path.isfile(args.file):
+            playbackFile = args.file
+            if not os.path.isfile(playbackFile):
+                playbackFile = args.file + settings.data_file_extension
+                
+            if os.path.isfile(playbackFile):
                 # Assign workDir as needed. If not specified, name based on loaded zip file.
                 workDir = args.workdir
                 if workDir == None:
@@ -271,11 +272,97 @@ def MainProgram(args):
                 else:
                     if not IsDirEmpty(workDir):  # Create a subdirectory
                        workDir = os.path.join(workDir, GetValidNewDirFromFilename(args.file))
-
+                
                 # Extract zip file
-                with zipfile.ZipFile(args.file, "r") as zf:
-                    zf.extractall(workDir)
-
+                with tarfile.open(playbackFile, "r:gz") as tar:
+                    tar.extractall(workDir)
+                    
+                # Read joint_confidence
+                joint_confidence = 0.2
+                with open(os.path.join(workDir, "settings.json"), "r") as jf:
+                    data = json.load(jf)
+                    if "joint_confidence" in data:
+                        joint_confidence = data["joint_confidence"]
+                
+                # Sorting image based on number
+                def atoi(text):
+                    return int(text) if text.isdigit() else text
+            
+                def human_key(text):
+                    return [atoi(c) for c in re.split(r'(\d+)', text)]
+                
+                cv2.namedWindow(settings.window_name_playback, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO) # Create Window
+                
+                # Load images and depth data
+                imageDir = os.path.join(workDir, "image/")
+                sortedImages = os.listdir(imageDir)
+                sortedImages.sort(key=human_key)
+                for imageLoc in sortedImages:
+                    imageCounter = human_key(imageLoc)[1]
+                    color_image = cv2.imread(os.path.join(imageDir, imageLoc))
+                    
+                    skeletons = None
+                    with open(os.path.join(workDir, "save.skel"), 'rb') as skels:
+                        found = False
+                        while not found:
+                            p = None
+                            try:
+                                p = pickle.load(skels)
+                            except EOFError:
+                                break
+                            
+                            if p[0] == imageCounter:
+                                skeletons = p[1]
+                                found = True
+                    
+                    if skeletons == None:
+                        print("No skeleton found for frame: {}".format(imageCounter))
+                                
+                    depth = None
+                    with open(os.path.join(workDir, "depth.sav"), 'rb') as depthFile:
+                        found = False
+                        while not found:
+                            p = None
+                            try:
+                                p = pickle.load(depthFile)
+                            except EOFError:
+                                break
+                            
+                            if p[0] == imageCounter:
+                                depth = p[1]
+                                found = True
+                                
+                    if depth == None:
+                        print("No depth found for frame: {}".format(imageCounter))
+                                
+                    depth_intrinsic = None
+                    with open(os.path.join(workDir, "depth_intrinsic.sav"), 'rb') as df:
+                        found = False
+                        while not found:
+                            p = None
+                            try:
+                                p = pickle.load(df)
+                            except EOFError:
+                                break
+                            
+                            if p[0] == imageCounter:
+                                depth_intrinsic = p[1]
+                                found = True
+                                
+                    if depth_intrinsic == None:
+                        print("No depth intrinsic found for frame: {}".format(imageCounter))
+                    
+                    # render the skeletons on top of the acquired image and display it
+                    cm.render_result(skeletons, color_image, joint_confidence)
+        
+                    render_ids_3d(
+                        color_image, skeletons, depth, depth_intrinsic, joint_confidence
+                    )
+                    cv2.imshow(settings.window_name_playback, color_image)
+                    if cv2.waitKey(1) == 27:
+                        break
+                
+                cv2.destroyAllWindows()
             else:
                 print("[!] Given playback file does not exist!")
         else:
