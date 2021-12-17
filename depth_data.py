@@ -8,19 +8,20 @@ import pyrealsense2 as rs
 
 class DepthFramePickleable:
     # Save  all possible distances which could be used
-    def __init__(self, depth, render_image):
-        # Bounds from image
-        rows, cols, _ = render_image.shape[:3]
-        low_bound_x = 0
-        upper_bound_x = cols - 1
-        low_bound_y = 0
-        upper_bound_y = rows - 1
-        
-        self.distances = {}
-        for x in range(low_bound_x, upper_bound_x):
-            for y in range(low_bound_y, upper_bound_y):
-                self.distances[x,y] = (depth.get_distance(x, y))
-                
+    def __init__(self, depth=None, render_image=None):
+        if depth is not None and render_image is not None:
+            # Bounds from image
+            rows, cols, _ = render_image.shape[:3]
+            low_bound_x = 0
+            upper_bound_x = cols - 1
+            low_bound_y = 0
+            upper_bound_y = rows - 1
+            
+            self.distances = {}
+            for x in range(low_bound_x, upper_bound_x):
+                for y in range(low_bound_y, upper_bound_y):
+                    self.distances[x,y] = (depth.get_distance(x, y))
+    
     def get_distance(self, x, y):
         return self.distances[x,y]
         

@@ -14,8 +14,52 @@ import pickle
 import os
 import threading, queue
 import time
+import math
 import depth_data, settings
+
+NUM_THREADS = 16
+
+def CreateDepthFramePickleable(d, depth, render_image, skeletons, joint_confidence):
+    distances = {}
+    rows, cols, channel = render_image.shape[:3]
+    distance_kernel_size = 5
+    # calculate 3D keypoints and display them
+    for skeleton_index in range(len(skeletons)):
+        skeleton_2D = skeletons[skeleton_index]
+        joints_2D = skeleton_2D.joints
+        for joint_index in range(len(joints_2D)):
+            # check if the joint was detected and has valid coordinate
+            if skeleton_2D.confidences[joint_index] > joint_confidence:
+                low_bound_x = max(
+                    0,
+                    int(
+                        joints_2D[joint_index].x -
+                        math.floor(distance_kernel_size / 2)
+                    ),
+                )
+                upper_bound_x = min(
+                    cols - 1,
+                    int(joints_2D[joint_index].x +
+                        math.ceil(distance_kernel_size / 2)),
+                )
+                low_bound_y = max(
+                    0,
+                    int(
+                        joints_2D[joint_index].y -
+                        math.floor(distance_kernel_size / 2)
+                    ),
+                )
+                upper_bound_y = min(
+                    rows - 1,
+                    int(joints_2D[joint_index].y +
+                        math.ceil(distance_kernel_size / 2)),
+                )
+                for x in range(low_bound_x, upper_bound_x):
+                    for y in range(low_bound_y, upper_bound_y):
+                        distances[x,y] = depth.get_distance(x, y)
     
+    d.distances = distances
+
 def SaveFrames(in_queue, in_image_dir, in_skel_pickle, in_depth_pickle, in_depth_intr_pickle):
     while True:
         frame_number, data_frame = in_queue.get()
@@ -87,14 +131,9 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             # Create a pipeline object. This object configures the streaming camera and owns it's handle
             unaligned_frames = pipeline.wait_for_frames()
             frames = align.process(unaligned_frames)
-            '''while frames is None:
-                try:
-                    frames = align.process(unaligned_frames)
-                except:
-                    pass'''
             
             depth = frames.get_depth_frame()
-
+            
             #depth = DepthFramePickleable(frames.get_depth_frame())
             #depth.__getstate__ = DepthFrameGetState
             color = frames.get_color_frame()
@@ -107,6 +146,9 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
 
             # perform inference and update the tracking id
             skeletons = skeletrack.track_skeletons(color_image)
+            
+            depth_pickleable = depth_data.DepthFramePickleable()
+            CreateDepthFramePickleable(depth_pickleable, depth, color_image, skeletons,joint_confidence)
 
             # Save skeletons along with frame counter
             #pickle.dump((imageCounter, skeletons), pickleFile)
@@ -134,9 +176,8 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             if cv2.waitKey(1) == 27:
                 break'''
                 
-            data_frame = depth_data.DataFrame(color_image, skeletons, depth_data.DepthFramePickleable(
-                depth, color_image), depth_intrinsic)
-            #data_frame = depth_data.DataFrame(color_image, skeletons, depth, depth_intrinsic)
+            data_frame = depth_data.DataFrame(color_image, skeletons,
+                depth_pickleable, depth_intrinsic)
             save_queue.put((imageCounter, data_frame))
 
             # Get delta time in seconds
