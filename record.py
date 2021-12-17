@@ -14,7 +14,6 @@ import pickle
 import os
 import threading, queue
 import time
-import copy
 import depth_data, settings
     
 def SaveFrames(in_queue, in_image_dir, in_skel_pickle, in_depth_pickle, in_depth_intr_pickle):
@@ -27,9 +26,9 @@ def SaveFrames(in_queue, in_image_dir, in_skel_pickle, in_depth_pickle, in_depth
             break
 
         # Save image
-        #color_image = cv2.cvtColor(data_frame.color_image, cv2.COLOR_BGR2RGB)
-        #cv2.imwrite(os.path.join(
-                #in_image_dir, "image{}.png".format(frame_number)), color_image)
+        color_image = cv2.cvtColor(data_frame.color_image, cv2.COLOR_BGR2RGB)
+        cv2.imwrite(os.path.join(
+                in_image_dir, "image{}.png".format(frame_number)), color_image)
         
         # Convert intrinsics to pickleable object
         pIntrinsics = depth_data.IntrinsicsPickleable(data_frame.depth_intrinsic)
@@ -37,7 +36,7 @@ def SaveFrames(in_queue, in_image_dir, in_skel_pickle, in_depth_pickle, in_depth
         
         # Save pickles
         pickle.dump((frame_number, pIntrinsics), in_depth_intr_pickle) # Depth intrinsic
-        #pickle.dump((frame_number, depth), in_depth_pickle) # Depth
+        pickle.dump((frame_number, data_frame.depth), in_depth_pickle) # Depth
         pickle.dump((frame_number, data_frame.skeletons), in_skel_pickle) # Skeletons
 
         in_queue.task_done()
@@ -50,12 +49,11 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
     config = rs.config()
     config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, settings.frames_per_second)
     config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, settings.frames_per_second)
-    config.enable_record_to_file(os.path.join(imageDir, "bag.bag"))
 
     # Start the realsense pipeline
     pipeline = rs.pipeline()
 
-    pipeline.start(config)
+    pipeline.start()
 
     # Create align object to align depth frames to color frames
     align = rs.align(rs.stream.color)
@@ -136,10 +134,9 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             if cv2.waitKey(1) == 27:
                 break'''
                 
-            #data_frame = depth_data.DataFrame(color_image, skeletons, depth_data.DepthFramePickleable(
-                #depth, color_image), depth_intrinsic)
-            #data_frame = depth_data.DataFrame(color_image, skeletons, copy.copy(depth), depth_intrinsic)
-            data_frame = depth_data.DataFrame(skeletons, depth_intrinsic)
+            data_frame = depth_data.DataFrame(color_image, skeletons, depth_data.DepthFramePickleable(
+                depth, color_image), depth_intrinsic)
+            #data_frame = depth_data.DataFrame(color_image, skeletons, depth, depth_intrinsic)
             save_queue.put((imageCounter, data_frame))
 
             # Get delta time in seconds

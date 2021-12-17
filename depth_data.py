@@ -53,13 +53,8 @@ class IntrinsicsPickleable(rs.pyrealsense2.intrinsics):
 
 
 class DataFrame:
-    def __init__(self, skeletons, depth_intrinsic):
-        self.skeletons = skeletons
-        self.depth_intrinsic = depth_intrinsic
-        self.depth = None # REMOVE
-        self.color_image = None # REMOVE
-    '''def __init__(self, color_image, skeletons, depth, depth_intrinsic):
+    def __init__(self, color_image, skeletons, depth, depth_intrinsic):
         self.color_image = color_image
         self.skeletons = skeletons
         self.depth = depth
-        self.depth_intrinsic = depth_intrinsic'''
+        self.depth_intrinsic = depth_intrinsic
