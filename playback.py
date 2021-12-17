@@ -142,10 +142,10 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
     load_queue = queue.Queue()
     last_queued_frame_number = 0
     total_frames = len(sortedImages)
-    LOAD_AHEAD = 3
+    load_ahead_frames = settings.load_ahead_seconds * settings.frames_per_second
     
-    # Preload
-    while last_queued_frame_number < LOAD_AHEAD:
+    # Preload the load ahead frame number, or all frames, whichever is smaller
+    while last_queued_frame_number < min(load_ahead_frames, total_frames):
         load_queue.put((last_queued_frame_number, 
                         os.path.join(imageDir, sortedImages[last_queued_frame_number]),
                         skels, depth_file, intrinsic_file))
@@ -155,7 +155,7 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
     p.start()
     
     # Wait til loading min preload frames
-    while len(loaded_frames) < LOAD_AHEAD:
+    while len(loaded_frames) < min(load_ahead_frames, total_frames):
         print("Loaded {} frames...".format(len(loaded_frames)))
         time.sleep(1)
             
@@ -207,7 +207,7 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
             print("Could not play frame {}.".format(frame_number))
         
         del loaded_frames[frame_number]
-        while load_queue.qsize() < min(LOAD_AHEAD, total_frames - last_queued_frame_number ):
+        while load_queue.qsize() < min(load_ahead_frames, total_frames - last_queued_frame_number ):
             load_queue.put((last_queued_frame_number, 
                         os.path.join(imageDir, sortedImages[last_queued_frame_number]),
                         skels, depth_file, intrinsic_file))
