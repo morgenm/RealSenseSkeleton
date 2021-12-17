@@ -23,36 +23,6 @@ class DepthFramePickleable:
                 
     def get_distance(self, x, y):
         return self.distances[x,y]
-    
-    '''def __init__(self, depth, frame):
-        super().__init__(frame)
-        #self.bits_per_pixel = depth.bits_per_pixel
-        #self.bytes_per_pixel = depth.bytes_per_pixel
-        #self.data = depth.data
-        self.frame_number = depth.frame_number
-        self.frame_timestamp_domain = depth.frame_timestamp_domain
-        self.height = depth.height
-        self.profile = depth.profile
-        self.stride_in_bytes = depth.stride_in_bytes
-        self.timestamp = depth.timestamp
-        self.width = depth.width
-        
-    def __setstate__(self, d):
-        self.bits_per_pixel = d[0]
-        self.bytes_per_pixel = d[1]
-        self.data = d[2]
-        self.frame_number = d[3]
-        self.frame_timestamp_domain = d[4]
-        self.height = d[5]
-        self.profile = d[6]
-        self.stride_in_bytes = d[7]
-        self.timestamp = d[8]
-        self.width = d[9]
-        
-    def __getstate__(self):
-        return [self.bits_per_pixel, self.bytes_per_pixel, self.data, self.frame_number, 
-                self.frame_timestamp_domain, self.height, self.profile, self.stride_in_bytes, self.timestamp, self.width]'''
-    
         
 class IntrinsicsPickleable(rs.pyrealsense2.intrinsics):
     def __init__(self, intrinsics):
@@ -78,3 +48,18 @@ class IntrinsicsPickleable(rs.pyrealsense2.intrinsics):
         
     def __getstate__(self):
         return [self.coeffs, self.fx, self.fy, self.height, self.model, self.ppx, self.ppy, self.width]
+
+# Single loaded frame for recording or playback
+
+
+class DataFrame:
+    def __init__(self, skeletons, depth_intrinsic):
+        self.skeletons = skeletons
+        self.depth_intrinsic = depth_intrinsic
+        self.depth = None # REMOVE
+        self.color_image = None # REMOVE
+    '''def __init__(self, color_image, skeletons, depth, depth_intrinsic):
+        self.color_image = color_image
+        self.skeletons = skeletons
+        self.depth = depth
+        self.depth_intrinsic = depth_intrinsic'''

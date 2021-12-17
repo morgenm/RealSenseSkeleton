@@ -18,6 +18,7 @@ import util as cm
 import render
 import shutil
 import threading
+import depth_data
 
 
 def IsDirEmpty(dir):
@@ -41,16 +42,6 @@ def GetValidNewDirFromFilename(fullPath):
         basename += "{}".format(sub)
         sub += 1
     return basename
-
-# Single loaded frame for playback
-
-
-class PlaybackFrame:
-    def __init__(self, color_image, skeletons, depth, depth_intrinsic):
-        self.color_image = color_image
-        self.skeletons = skeletons
-        self.depth = depth
-        self.depth_intrinsic = depth_intrinsic
 
 # Get pickled data at current frame
 
@@ -97,7 +88,7 @@ def LoadPlaybackData(in_queue, out_frames):
         depth_intrinsic = GetPickledAtFrame(intrinsic_file, frame_number)
 
         # Return frame
-        out_frames[frame_number] = PlaybackFrame(
+        out_frames[frame_number] = depth_data.DataFrame(
             color_image, skeletons, depth, depth_intrinsic)
 
         in_queue.task_done()

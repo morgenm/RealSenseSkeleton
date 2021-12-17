@@ -36,27 +36,25 @@ def MainProgram(args):
                 frameDataLoc = os.path.join(saveDir, "frame_data.json")
                 frame_data = {}  # Frame data is returned by record and must be written here
 
-                try:
-                    record.Record(saveDir, os.path.join(
-                        saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFile, frame_data)
-                except KeyboardInterrupt:
-                    print("Saving...")
+                record.Record(saveDir, os.path.join(
+                    saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFile, frame_data)
+                print("Saving...")
 
-                    # Write the frame data to file
-                    with open(frameDataLoc, 'w') as fd:
-                        json.dump(frame_data, fd)
+                # Write the frame data to file
+                with open(frameDataLoc, 'w') as fd:
+                    json.dump(frame_data, fd)
 
-                    # Close the files
-                    pickleFile.close()
-                    depthPickle.close()
-                    depthIntrPickle.close()
-                    settingsFile.close()
+                # Close the files
+                pickleFile.close()
+                depthPickle.close()
+                depthIntrPickle.close()
+                settingsFile.close()
 
-                    # Compress the directory
-                    tar = tarfile.open(args.file + settings.data_file_extension,
-                                       "w:gz", compresslevel=settings.data_compress_level)
-                    tar.add(saveDir, arcname="")
-                    tar.close()
+                # Compress the directory
+                tar = tarfile.open(args.file + settings.data_file_extension,
+                                   "w:gz", compresslevel=settings.data_compress_level)
+                tar.add(saveDir, arcname="")
+                tar.close()
 
                 # Delete save dir
                 shutil.rmtree(saveDir, ignore_errors=True)
