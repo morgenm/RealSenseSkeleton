@@ -4,6 +4,7 @@ Playback
 @author: Morgen Malinoski
 """
 
+import pyrealsense2 as rs
 import os
 import settings
 import pickle
@@ -18,6 +19,7 @@ import util as cm
 import render
 import shutil
 import threading
+import numpy as np
 import depth_data
 
 
@@ -76,20 +78,20 @@ def LoadPlaybackData(in_queue, out_frames):
             break
 
         # Get color image
-        color_image = cv2.imread(image_loc)
+        #color_image = cv2.imread(image_loc)
 
         # Get skeletons
         skeletons = GetPickledAtFrame(skeletons_file, frame_number)
 
         # Get depth
-        depth = GetPickledAtFrame(depth_file, frame_number)
+        #depth = GetPickledAtFrame(depth_file, frame_number)
 
         # Get depth_intrinsic
         depth_intrinsic = GetPickledAtFrame(intrinsic_file, frame_number)
 
         # Return frame
         out_frames[frame_number] = depth_data.DataFrame(
-            color_image, skeletons, depth, depth_intrinsic)
+            skeletons, depth_intrinsic)
 
         in_queue.task_done()
 
@@ -139,25 +141,25 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
 
     # Open files
     imageDir = os.path.join(workDir, "image/")
-    sortedImages = os.listdir(imageDir)
-    sortedImages.sort(key=human_key)
+    '''sortedImages = os.listdir(imageDir)
+    sortedImages.sort(key=human_key)'''
     skels = open(os.path.join(workDir, "save.skel"), "rb")
-    depth_file = open(os.path.join(workDir, "depth.sav"), 'rb')
+    #depth_file = open(os.path.join(workDir, "depth.sav"), 'rb')
     intrinsic_file = open(os.path.join(workDir, "depth_intrinsic.sav"), 'rb')
 
     # Load frames with multiprocessing
     loaded_frames = {}
     load_queue = queue.Queue()
     last_queued_frame_number = 0
-    total_frames = len(sortedImages)
+    total_frames = len(frame_data)
+    print("T",total_frames)
     load_ahead_frames = settings.load_ahead_seconds * settings.frames_per_second
 
     # Preload the load ahead frame number, or all frames, whichever is smaller
     while last_queued_frame_number < min(load_ahead_frames, total_frames):
         load_queue.put((last_queued_frame_number,
-                        os.path.join(
-                            imageDir, sortedImages[last_queued_frame_number]),
-                        skels, depth_file, intrinsic_file))
+                        None,
+                        skels, None, intrinsic_file))
         last_queued_frame_number += 1
 
     p = threading.Thread(target=LoadPlaybackData,
@@ -171,7 +173,7 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
 
     # Render each frame
     print("Playing...")
-    cv2.namedWindow(settings.window_name_playback,
+    '''cv2.namedWindow(settings.window_name_playback,
                     cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)  # Create Window
     last_time = datetime.datetime.now()  # Last render time
     # for frame_number in color_images:
@@ -236,7 +238,68 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
             if record_delta > delta:
                 time.sleep(record_delta - delta)
         else:
+            print("No frame data found for frame: {}".format(frame_number))'''
+    
+    pipeline = rs.pipeline()
+    config = rs.config()
+    rs.config.enable_device_from_file(config, os.path.join(imageDir, "bag.bag"))
+    config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, settings.frames_per_second)
+    config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, settings.frames_per_second)
+    
+    pipeline.start(config)
+    
+    cv2.namedWindow(settings.window_name_playback, cv2.WINDOW_AUTOSIZE)
+    frame_number = 0
+    last_time = datetime.datetime.now()  # Last render time
+    while True and frame_number < total_frames:
+        frames = pipeline.wait_for_frames()
+        depth = frames.get_depth_frame()
+        
+        # Get color frame
+        color = frames.get_color_frame()
+        if not depth or not color:
+            continue
+        
+        # Convert images to numpy arrays
+        depth_image = np.asanyarray(depth.get_data())
+        color_image = np.asanyarray(color.get_data())
+        
+        frame = loaded_frames[frame_number]
+        skeletons = frame.skeletons
+        depth_intrinsic = frame.depth_intrinsic
+        
+        cm.render_result(skeletons, color_image, joint_confidence)
+        
+        render.render_ids_3d(
+                color_image, skeletons, depth, depth_intrinsic, joint_confidence
+            )
+        
+        while load_queue.qsize() < min(load_ahead_frames, total_frames - last_queued_frame_number):
+            load_queue.put((last_queued_frame_number,
+                            None,
+                            skels, None, intrinsic_file))
+            last_queued_frame_number += 1
+
+        # Get delta time and wait if necessary
+        frame_str = "{}".format(frame_number)
+        if frame_str in frame_data:
+            now = datetime.datetime.now()
+            delta  = now - last_time
+            delta = delta.total_seconds()
+            last_time = now
+
+            record_delta = frame_data[frame_str]["Delta Time"]
+            if record_delta > delta:
+                time.sleep(record_delta - delta)
+        else:
             print("No frame data found for frame: {}".format(frame_number))
+            
+        frame_number += 1
+        
+        cv2.imshow(settings.window_name_playback, color_image)
+        if cv2.waitKey(1) == 27:
+            break
+        
 
     # Send quit command to thread
     load_queue.put(("Quit", None, None, None, None))
@@ -246,7 +309,7 @@ def Playback(playbackFile, workDir, playbackFileNoExt):
 
     # Close data files
     skels.close()
-    depth_file.close()
+    #depth_file.close()
     intrinsic_file.close()
 
     # Delete save dir
