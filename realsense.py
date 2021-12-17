@@ -4,8 +4,10 @@ import os
 import shutil
 import json
 import tarfile
-import record, playback
+import record
+import playback
 import settings
+
 
 def MainProgram(args):
     # Check mode
@@ -32,25 +34,27 @@ def MainProgram(args):
                 settingsFileLoc = os.path.join(saveDir, "settings.json")
                 settingsFile = open(settingsFileLoc, "w")
                 frameDataLoc = os.path.join(saveDir, "frame_data.json")
-                frame_data = {} # Frame data is returned by record and must be written here
-                
-                try: 
-                    record.Record(saveDir, os.path.join(saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFile, frame_data)
+                frame_data = {}  # Frame data is returned by record and must be written here
+
+                try:
+                    record.Record(saveDir, os.path.join(
+                        saveDir, "image/"), pickleFile, depthPickle, depthIntrPickle, settingsFile, frame_data)
                 except KeyboardInterrupt:
                     print("Saving...")
-                    
+
                     # Write the frame data to file
                     with open(frameDataLoc, 'w') as fd:
                         json.dump(frame_data, fd)
-                    
+
                     # Close the files
                     pickleFile.close()
                     depthPickle.close()
                     depthIntrPickle.close()
                     settingsFile.close()
-                    
-                    # Compress the directory                    
-                    tar = tarfile.open(args.file + settings.data_file_extension, "w:gz", compresslevel=settings.data_compress_level)
+
+                    # Compress the directory
+                    tar = tarfile.open(args.file + settings.data_file_extension,
+                                       "w:gz", compresslevel=settings.data_compress_level)
                     tar.add(saveDir, arcname="")
                     tar.close()
 
@@ -67,7 +71,7 @@ def MainProgram(args):
             playbackFile = args.file
             if not os.path.isfile(playbackFile):
                 playbackFile = args.file + settings.data_file_extension
-                
+
             if os.path.isfile(playbackFile):
                 playback.Playback(playbackFile, args.workdir, args.file)
             else:
@@ -78,9 +82,11 @@ def MainProgram(args):
     else:
         print("[!] Unknown mode: {}! Available modes: record, playback.".format(mode))
 
-# Main content begins
+
+# Handle arguments and call main program
 if __name__ == "__main__":
-    parser=argparse.ArgumentParser(description="RealSense Skeleton Tracking.")
+    parser = argparse.ArgumentParser(
+        description="RealSense Skeleton Tracking.")
     parser.add_argument(
         "mode", type=str, help="Program mode (record, playback)")
     parser.add_argument("-f", "--file", type=str,
@@ -88,7 +94,7 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--workdir", type=str,
                         help="Working directory to extract playback files to. By default creates a directory where the playback is stored.")
 
-    args=parser.parse_args()
+    args = parser.parse_args()
 
     MainProgram(args)  # Run main program
     print("Quiting...")

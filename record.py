@@ -14,7 +14,10 @@ import pickle
 from depth_data import *
 import os
 
-def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settingsFile, out_frame_data):  
+# Record images, skeletons and depth data until keyboard interrupt is received, or exception occurs
+
+
+def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settingsFile, out_frame_data):
     try:
         # Configure depth and color streams of the intel realsense
         config = rs.config()
@@ -42,9 +45,9 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
         # Create window for initialisation
         #window_name = "cuot workingbemos skeleton tracking with realsense D400 series"
         # cv2.namedWindow(window_name, cv2.WINDOW_NORMAL + cv2.WINDOW_KEEPRATIO)
-        
+
         # Write joint confidence and depth intrinsic
-        settings = {"joint_confidence" : joint_confidence}
+        settings = {"joint_confidence": joint_confidence}
         json.dump(settings, settingsFile)
 
         imageCounter = 0
@@ -54,7 +57,7 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             unaligned_frames = pipeline.wait_for_frames()
             frames = align.process(unaligned_frames)
             depth = frames.get_depth_frame()
-            
+
             #depth = DepthFramePickleable(frames.get_depth_frame())
             #depth.__getstate__ = DepthFrameGetState
             color = frames.get_color_frame()
@@ -77,11 +80,12 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             # Save image
             cv2.imwrite(os.path.join(
                 imageDir, "image{}.png".format(imageCounter)), color_image)
-            
+
             # Dump depth and depth intrinsic with frame counter
             pIntrinsics = IntrinsicsPickleable(depth_intrinsic)
             pickle.dump((imageCounter, pIntrinsics), depthIntrPickle)
-            pickle.dump((imageCounter, DepthFramePickleable(depth, color_image)), depthPickle)
+            pickle.dump((imageCounter, DepthFramePickleable(
+                depth, color_image)), depthPickle)
 
             # render the skeletons on top of the acquired image and display it
             '''cm.render_result(skeletons, color_image, joint_confidence)
@@ -92,14 +96,14 @@ def Record(saveDir, imageDir, pickleFile, depthPickle, depthIntrPickle, settings
             cv2.imshow(window_name, color_image)
             if cv2.waitKey(1) == 27:
                 break'''
-            
+
             # Get delta time in seconds
             now = datetime.datetime.now()
             delta = now - last_time
             delta = delta.total_seconds()
             last_time = now
-            out_frame_data[imageCounter] = {"Delta Time" : delta}
-            
+            out_frame_data[imageCounter] = {"Delta Time": delta}
+
             imageCounter += 1
 
         pipeline.stop()

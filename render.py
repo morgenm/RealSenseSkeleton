@@ -8,6 +8,7 @@ import cv2, math
 import numpy as np
 import pyrealsense2 as rs
 
+# Provided cubemos render function
 def render_ids_3d(
     render_image, skeletons_2d, depth_map, depth_intrinsic, joint_confidence
 ):
